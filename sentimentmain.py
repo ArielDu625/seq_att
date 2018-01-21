@@ -38,7 +38,7 @@ class Config(object):
 
     #learning rate
     lr = 0.05
-    begin_decay_epoch = 3
+    begin_decay_epoch = 3 
     lrdecay_every_epoch = 1 
     emb_lr = 0.1
     
@@ -52,9 +52,11 @@ class Config(object):
     trainable_embeddings= True
     
     #Add attention layer
-    use_attention = False 
+    use_attention = True 
     attention_dim = 128 
-    concat_dim = 512
+    concat_dim = 512 
+    #method: dot, general, location, or default concat
+    method = "dot" 
     
     global_step = 0
     dev_every_step = 10
@@ -117,10 +119,10 @@ def train(restore=False):
     with tf.Graph().as_default():
         
         #model = seq_att.tf_seqLSTM(config)
-        model = seq_att.tf_seqLSTMAtt(config) 
+        #model = seq_att.tf_seqLSTMAtt(config) 
 
         #model = seq_att.tf_seqbiLSTM(config)
-        #model = seq_att.tf_seqbiLSTMAtt(config)
+        model = seq_att.tf_seqbiLSTMAtt(config)
         
 
         model_name = model.__class__.__name__

@@ -211,7 +211,7 @@ class tf_seqLSTM(object):
         for epoch in range(self.config.num_epochs):
             print "epoch", epoch
 
-            if epoch > self.config.begin_decay_epoch and epoch % self.config.lrdecay_every_epoch == 0:
+            if epoch >= self.config.begin_decay_epoch and epoch % self.config.lrdecay_every_epoch == 0:
                 self.config.lr = self.config.lr * 0.5 
             print "learning rate:", self.config.lr
             
@@ -354,7 +354,6 @@ class tf_seqLSTMAtt(tf_seqLSTM):
     def unpack_sequence(self,tensor):
         return tf.unstack(tf.transpose(tensor, perm = [1,0,2]))
     
-    
     def attention(self, emb,final_hidden,mt):
          
         with tf.variable_scope("Attention"):
@@ -384,36 +383,71 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         self.masked_betas = tf.multiply(exp_betas, tf.transpose(self.mask_idx))
         _alphas = tf.div(self.masked_betas ,tf.reduce_sum(self.masked_betas, 0))
         alphas = tf.expand_dims(_alphas, -1)
-        
         return alphas
+    
+    def score(self, context, target, mt, method = "concat"):
+        #general
+        #transpose(context) * Ws * target
+        if method == "general":
+            with tf.variable_scope("Attention"):
+                Wa = tf.get_variable("Wa", [self.hidden_dim, self.hidden_dim],
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
 
-    def self_attention(self, hiddens, final_hidden, mt):
+                with tf.name_scope("Attention"):
+                    tf.summary.histogram("Wa", Wa)
 
-        with tf.variable_scope("Attention"):
-            Wa = tf.get_variable("Wa", [2 * self.hidden_dim, self.attention_dim],
+                t_wa = tf.matmul(target, Wa)
+                t_wa_c = tf.multiply(context, t_wa)
+                betas = tf.reduce_sum(t_wa_c, axis = 2)
+
+        #dot
+        #transpose(context) * target
+        elif method == "dot":
+            dot = tf.multiply(context, target)
+            betas = tf.reduce_sum(dot, axis = 2)
+        
+        elif method == "location":
+            with tf.variable_scope("Attention"):
+                Wa = tf.get_variable("Wa", [self.max_time, self.hidden_dim],
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
+                with tf.name_scope("Attention"):
+                    tf.summary.histogram("Wa", Wa)
+            betas = tf.matmul(Wa, target, transpose_b = True)
+
+        #default concat
+        #transpose(Vs) * tanh(Ws[c:h])
+        else:
+            with tf.variable_scope("Attention"):
+                Wa = tf.get_variable("Wa", [2 * self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
-            Ua = tf.get_variable("Ua", [self.attention_dim],
+                Ua = tf.get_variable("Ua", [self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05))
         
-            with tf.name_scope("Attention"):
-                tf.summary.histogram("Wa", Wa)
-                tf.summary.histogram("Ua", Ua)
+                with tf.name_scope("Attention"):
+                    tf.summary.histogram("Wa", Wa)
+                    tf.summary.histogram("Ua", Ua)
 
-        _hs = tf.stack([final_hidden for i in range(mt)])
-        hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
-        _x_h = tf.concat([hiddens, hs], axis = 2)
-        x_h = tf.reshape(_x_h, [-1, 2*self.hidden_dim])
+            _hs = tf.stack([target for i in range(mt)])
+            hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
+            _x_h = tf.concat([context, hs], axis = 2)
+            x_h = tf.reshape(_x_h, [-1, 2*self.hidden_dim])
 
-        _v_att = tf.tanh(tf.matmul(x_h, Wa))
-        _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
-        betas = tf.reshape(_betas, [mt, -1])
+            _v_att = tf.tanh(tf.matmul(x_h, Wa))
+            _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
+            betas = tf.reshape(_betas, [mt, -1])
         
+    
         exp_betas = tf.exp(betas)
         self.masked_betas = tf.multiply(exp_betas, tf.transpose(self.mask_idx))
         _alphas = tf.div(self.masked_betas ,tf.reduce_sum(self.masked_betas, 0))
         alphas = tf.expand_dims(_alphas, -1)
         
         return alphas
+
+    
+
+    def self_attention(self, context, target, mt, method):
+        return self.score(context, target, mt, method)
 
 
     def compute_states(self, emb):
@@ -432,7 +466,6 @@ class tf_seqLSTMAtt(tf_seqLSTM):
             #output shape:list of [batch_size, output_size],list length=max_time
             #state shape:[2, batch_size, output_size], in which 2 is SLTMStateTuple,(c,h)
         
-
         #the final hidden of the sentence
         final_hidden = state.h
 
@@ -442,13 +475,11 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         
         #attenions
         mt = len(outputs)
-        #alphas = self.attention(emb,final_hidden,mt)
-        alphas = self.self_attention(outputs, average_hidden, mt)
+        method = self.config.method
+        alphas = self.self_attention(outputs, average_hidden, mt, method)
 
-        #context = tf.reduce_sum(self.unpack_sequence(emb) * alphas, 0)
         context = tf.reduce_sum(outputs * alphas, 0)
-        #final_outputs = tf.concat([context, final_hidden], axis = 1)
-        final_outputs = tf.concat([context, average_hidden], axis = 1)
+        final_outputs = tf.concat([context, final_hidden], axis = 1)
         
         self.alphas = tf.squeeze(alphas)
 
@@ -458,19 +489,6 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         return final_outputs
 
 
-    def score(self, context, hidden, method = "concat"):
-        #general
-        #transpose(c) * Ws * hidden
-        if method == "general":
-            pass
-        #dot
-        #transpose(c) * hidden
-        elif method == "dot":
-            pass 
-        #default concat
-        #transpose(Vs) * tanh(Ws[c:h])
-        else:
-            pass
     
     def create_output(self,rnn_out):
         #project the concatenation into same space 
@@ -580,6 +598,34 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
         
         return alphas
     
+    def self_attention(self, hiddens, target, mt):
+
+        with tf.variable_scope("Attention"):
+            Wa = tf.get_variable("Wa", [4 * self.hidden_dim, self.attention_dim],
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
+            Ua = tf.get_variable("Ua", [self.attention_dim],
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
+        
+            with tf.name_scope("Attention"):
+                tf.summary.histogram("Wa", Wa)
+                tf.summary.histogram("Ua", Ua)
+
+        _hs = tf.stack([target for i in range(mt)])
+        hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
+        _x_h = tf.concat([hiddens, hs], axis = 2)
+        x_h = tf.reshape(_x_h, [-1, 4*self.hidden_dim])
+
+        _v_att = tf.tanh(tf.matmul(x_h, Wa))
+        _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
+        betas = tf.reshape(_betas, [mt, -1])
+        
+        exp_betas = tf.exp(betas)
+        self.masked_betas = tf.multiply(exp_betas, tf.transpose(self.mask_idx))
+        _alphas = tf.div(self.masked_betas ,tf.reduce_sum(self.masked_betas, 0))
+        alphas = tf.expand_dims(_alphas, -1)
+        
+        return alphas
+    
     def compute_states(self, emb):
 
         with tf.variable_scope("Composition", 
@@ -595,18 +641,16 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
             outputs, output_state_fw, output_state_bw = rnn.static_bidirectional_rnn(cell_fw, cell_bw, self.unpack_sequence(emb), sequence_length = self.lngths, dtype = tf.float32)
 
         #final hidden
-        final_hidden_fw = output_state_fw.h
-        final_hidden_bw = output_state_bw.h
-        final_hidden = tf.concat([final_hidden_bw, final_hidden_fw], axis = 1)
+        final_hidden = outputs[-1]
 
         #use average of hiddens
         sum_out=tf.reduce_sum(tf.stack(outputs),[0])
         average_hidden = tf.div(sum_out,tf.expand_dims(tf.to_float(self.lngths),1))
         
         mt = len(outputs)
-        alphas = self.attention(emb,average_hidden, mt)
+        alphas = self.self_attention(outputs,average_hidden, mt)
 
-        context = tf.reduce_sum(self.unpack_sequence(emb) * alphas, 0)
+        context = tf.reduce_sum(outputs * alphas, 0)
         final_outputs = tf.concat([context, final_hidden], axis = 1)
 
         self.alphas = tf.squeeze(alphas)
@@ -617,7 +661,7 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
     def create_output(self,rnn_out):
         #project the concatenation into same space 
         with tf.variable_scope("Concatenation", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
-            Wc = tf.get_variable("Wc", [self.config.concat_dim, self.emb_dim + 2*self.hidden_dim],
+            Wc = tf.get_variable("Wc", [self.config.concat_dim, 4*self.hidden_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05))
             bc = tf.get_variable("bc", [self.config.concat_dim], initializer = tf.constant_initializer(0.0),
                     regularizer = tf.contrib.layers.l2_regularizer(0.0))
