@@ -1,4 +1,4 @@
-import tf_data_utils as utils
+import data_utils as utils
 
 import os
 import sys
@@ -37,8 +37,8 @@ class Config(object):
     reg=0.0001
 
     #learning rate
-    lr = 0.05
-    begin_decay_epoch = 3 
+    lr = 0.01
+    begin_decay_epoch = 5 
     lrdecay_every_epoch = 1 
     emb_lr = 0.1
     
@@ -56,7 +56,7 @@ class Config(object):
     attention_dim = 128 
     concat_dim = 512 
     #method: dot, general, location, or default concat
-    method = "dot" 
+    method = "location" 
     
     global_step = 0
     dev_every_step = 10

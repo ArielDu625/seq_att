@@ -7,7 +7,7 @@ import sys
 
 from random import shuffle
 from tensorflow.contrib import rnn
-from tf_data_utils import extract_seq_data
+from data_utils import extract_seq_data
 
 ckpt_dir = './ckpt/'
 summaries_dir = './summaries/'
