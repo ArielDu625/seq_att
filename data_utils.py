@@ -1,4 +1,4 @@
-from tf_treenode import tNode,processTree
+from treenode import tNode,processTree
 import numpy as np
 import os
 import random
@@ -9,12 +9,11 @@ class Vocab(object):
         self.words = []
         self.word2idx={}
         self.idx2word={}
-
+        
         self.load(path)
 
 
     def load(self,path):
-
         with open(path,'r') as f:
             for line in f:
                 w=line.strip()
@@ -315,6 +314,7 @@ def test_fn():
                 sentence.append(word)
         print(" ".join(sentence))
     
+
     return data
 
 if __name__=='__main__':

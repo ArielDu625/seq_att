@@ -651,7 +651,7 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
         alphas = self.self_attention(outputs,average_hidden, mt)
 
         context = tf.reduce_sum(outputs * alphas, 0)
-        final_outputs = tf.concat([context, final_hidden], axis = 1)
+        final_outputs = tf.concat([context, average_hidden], axis = 1)
 
         self.alphas = tf.squeeze(alphas)
         

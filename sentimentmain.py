@@ -40,23 +40,23 @@ class Config(object):
     lr = 0.01
     begin_decay_epoch = 5 
     lrdecay_every_epoch = 1 
-    emb_lr = 0.1
+    emb_lr = 0.05
     
     batch_size = 25
 
     maxseqlen = None
     maxnodesize = None
     
-    fine_grained = True
+    fine_grained = False
     use_initial_embeddings = True 
     trainable_embeddings= True
     
     #Add attention layer
     use_attention = True 
-    attention_dim = 128 
-    concat_dim = 512 
+    attention_dim = 54 
+    concat_dim = 300 
     #method: dot, general, location, or default concat
-    method = "location" 
+    method = "concat" 
     
     global_step = 0
     dev_every_step = 10
@@ -165,8 +165,8 @@ def visualize_attention(model, data,voc, sess,ckpt_base):
     alphas, sentence,label,predlabel = model.plot_attention(data, voc, sess)
     print alphas
     print sentence
-    print "label", label
     print "pred label:", predlabel
+    print "label", label
     
     length = len(sentence)
     indices = xrange(length)
