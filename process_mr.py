@@ -13,7 +13,7 @@ def load_mr(data_dir):
     max_sentence_length = 0
 
     for split, path in split_paths.iteritems():
-        sentencepath = os.path.join(path, "sents.txt")
+        sentencepath = os.path.join(path, "index.txt")
         labelpath = os.path.join(path, "labels.txt")
         
         splitdata=[]
@@ -32,11 +32,12 @@ def load_mr(data_dir):
     
     return data, voc, max_sentence_length
 
-def extract_data(data,voc, fillnum = 100):
+def extract_data(data, fillnum = 100):
     seqdata = []
     seqlabels = []
     for pair in data:
-        sidx = [voc.encode(word) for word in pair['sentence'].split()]
+        sentence = pair["sentence"]
+        sidx = [int(i) for i in sentence.split()]
         seqdata.append(sidx)
         seqlabels.append(pair['label'])
 
@@ -56,7 +57,6 @@ def extract_data(data,voc, fillnum = 100):
     return seqdata, seqlabels, seqlngths, maxl
 
 
-            
 def test_fn():
     data_dir = './mr'
     data, voc, max_sentence_length = load_mr(data_dir)
@@ -66,8 +66,8 @@ def test_fn():
     for k,d in data.iteritems():
         print(k, len(d))
     
-    d= data['test']
-    a,b,c,_ = extract_data(d[0:1], voc, max_sentence_length)
+    d = data['test']
+    a,b,c,_ = extract_data(d[0:1], max_sentence_length)
     print a,b,c
 
     for sentence in a:

@@ -1,5 +1,6 @@
 import numpy as np
 import os,re
+from data_utils import Vocab
 
 def clean_str(string):
     string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string) 
@@ -93,9 +94,27 @@ def load_sentences(data_dir, clean = True):
     with open(os.path.join(data_dir, 'train','labels.txt'),'w') as f:
         f.writelines('\n'.join(train_labels))
 
+def encode_sentence(data_dir):
+    vocab = Vocab(os.path.join(data_dir, 'dict_cleaned.txt'))
+    split_paths = {}
+    for split in ['train','test']:
+        split_paths[split] = os.path.join(data_dir, split)
+        encodes = []
+        with open(os.path.join(split_paths[split], 'sents.txt'),'r') as sf:
+            for line in sf.readlines():
+                sentence = line.strip().split()
+                index = [str(vocab.encode(word)) for word in sentence]
+                encode = " ".join(index)
+                encodes.append(encode)
+
+        with open(os.path.join(split_paths[split], 'index.txt'),'w') as wf:
+            wf.writelines('\n'.join(encodes))
+
+            
 def split_mr():
     data_dir = './mr'
     load_sentences(data_dir)
+    encode_sentence(data_dir)
 
 if __name__ == "__main__":
     split_mr()

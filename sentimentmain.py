@@ -1,4 +1,5 @@
 import data_utils as utils
+import process_mr as mr_utils
 
 import os
 import sys
@@ -17,13 +18,13 @@ import time
 
 import seq_att
 
-DIR = './sst/'
+MR_DIR = './mr/'
+SST_DIR = './sst/'
 GLOVE_DIR ='./glove/glove.840B.300d.txt'
 summaries_dir = './summaries/'
 ckpt_dir = './ckpt/'
 
 class Config(object):
-
     num_emb=None
 
     emb_dim = 300
@@ -38,7 +39,7 @@ class Config(object):
 
     #learning rate
     lr = 0.01
-    begin_decay_epoch = 5 
+    begin_decay_epoch = 3 
     lrdecay_every_epoch = 1 
     emb_lr = 0.05
     
@@ -46,7 +47,8 @@ class Config(object):
 
     maxseqlen = None
     maxnodesize = None
-    
+    dataset = None
+
     fine_grained = False
     use_initial_embeddings = True 
     trainable_embeddings= True
@@ -64,40 +66,50 @@ class Config(object):
     best_test_score = 0.0
     best_test_epoch = 0
     
-def train(restore=False):
-
+def train(dataset = 'SST', restore=False):
     config=Config()
 
     if config.use_initial_embeddings == False:
         assert config.trainable_embeddings == True
-
-
-    data,vocab = utils.load_sentiment_treebank(DIR,config.fine_grained)
     
-    train_set, dev_set, test_set = data['train'], data['dev'], data['test']
-    print 'train', len(train_set)
-    print 'dev', len(dev_set)
-    print 'test', len(test_set)
+    config.dataset = dataset 
+    print 'using dataset ', dataset
+    if dataset == 'SST':
+        data,vocab = utils.load_sentiment_treebank(SST_DIR,config.fine_grained)
+    
+        train_set, dev_set, test_set = data['train'], data['dev'], data['test']
+        print 'train', len(train_set)
+        print 'dev', len(dev_set)
+        print 'test', len(test_set)
    
-    #merge the train_set and dev_set
-    #train_set.extend(dev_set)
-    #print 'train and dev set', len(train_set)
+        num_emb = len(vocab)
+        num_labels = 5 if config.fine_grained else 3
+        for _, dataset in data.items():
+            labels = [label for _, label in dataset]
+            assert set(labels) <= set(xrange(num_labels)), set(labels)
+        print 'num emb', num_emb
+        print 'num labels', num_labels
 
-    num_emb = len(vocab)
-    num_labels = 5 if config.fine_grained else 3
-    for _, dataset in data.items():
-        labels = [label for _, label in dataset]
-        assert set(labels) <= set(xrange(num_labels)), set(labels)
-    print 'num emb', num_emb
-    print 'num labels', num_labels
+        config.num_emb=num_emb
+        config.output_dim = num_labels
 
-    config.num_emb=num_emb
-    config.output_dim = num_labels
-
-    config.maxseqlen=utils.get_max_len_data(data)
-    config.maxnodesize=utils.get_max_node_size(data)
-    print config.maxnodesize,config.maxseqlen ," maxsize"
+        config.maxseqlen=utils.get_max_len_data(data)
+        config.maxnodesize=utils.get_max_node_size(data)
+        print "max sentence lengthi", config.maxseqlen
     
+    elif dataset == 'MR':
+        config.fine_grained = False
+
+        data, vocab, config.maxseqlen = mr_utils.load_mr(MR_DIR) 
+        train_set, test_set = data['train'], data['test']
+        print 'train', len(train_set)
+        print 'test', len(test_set)
+
+        config.num_emb = len(vocab)
+        config.output_dim = 2
+        print 'num emb', config.num_emb
+        print 'max sentence length', config.maxseqlen
+
     
     if config.fine_grained:
         classify_type = "fine_grained"
@@ -128,8 +140,8 @@ def train(restore=False):
         model_name = model.__class__.__name__
         print 'The model is running now:',model_name,classify_type, pretrain_type
         
-        ckpt_base = os.path.join(ckpt_dir, model_name, classify_type, pretrain_type)
-        summary_base = os.path.join(summaries_dir, model_name, classify_type, pretrain_type)
+        ckpt_base = os.path.join(ckpt_dir, model_name, dataset,classify_type, pretrain_type)
+        summary_base = os.path.join(summaries_dir, model_name, dataset, classify_type, pretrain_type)
 
         init=tf.global_variables_initializer()
         saver = tf.train.Saver()
@@ -156,7 +168,7 @@ def train(restore=False):
                     sess.run(model.embedding_init, feed_dict = {model.initial_emb: glove_embeddings})
 
                     
-                avg_loss = model.train(train_set, dev_set, test_set, sess,saver)
+                avg_loss = model.train(train_set, test_set, sess,saver)
                 print 'avg loss', avg_loss
                     
                         
@@ -188,8 +200,10 @@ def visualize_attention(model, data,voc, sess,ckpt_base):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        restore=True
-    else:restore=False
-    train(restore)
+    dataset = sys.argv[1]
+    restore = int(sys.argv[2])
+    #if len(sys.argv) > 1:
+    #    restore=True
+    #else:restore=False
+    train(dataset,restore)
 

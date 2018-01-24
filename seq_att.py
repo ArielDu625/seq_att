@@ -8,6 +8,7 @@ import sys
 from random import shuffle
 from tensorflow.contrib import rnn
 from data_utils import extract_seq_data
+from process_mr import extract_data
 
 ckpt_dir = './ckpt/'
 summaries_dir = './summaries/'
@@ -90,9 +91,10 @@ class tf_seqLSTM(object):
                 pretrain_type = "fixed"
         else:
             pretrain_type = "random"
-
-        self.summary_base = os.path.join(summaries_dir,model_name ,classify_type ,pretrain_type) 
-        self.ckpt_base = os.path.join(ckpt_dir, model_name, classify_type, pretrain_type)
+        
+        dataset = config.dataset
+        self.summary_base = os.path.join(summaries_dir,model_name ,dataset, classify_type ,pretrain_type) 
+        self.ckpt_base = os.path.join(ckpt_dir, model_name,dataset, classify_type, pretrain_type)
 
         #self.summary_writer = tf.summary.FileWriter(summary_base)
         self.train_writer = tf.summary.FileWriter(self.summary_base + '/train')
@@ -206,7 +208,7 @@ class tf_seqLSTM(object):
 
         return mask_idx
 
-    def train(self,train_data, dev_data,test_data, sess,saver):
+    def train(self,train_data,test_data, sess,saver):
         
         for epoch in range(self.config.num_epochs):
             print "epoch", epoch
@@ -215,7 +217,7 @@ class tf_seqLSTM(object):
                 self.config.lr = self.config.lr * 0.5 
             print "learning rate:", self.config.lr
             
-            avg_loss = self.train_epoch(train_data,dev_data, sess)
+            avg_loss = self.train_epoch(train_data, sess)
             print "average loss:", avg_loss
 
             if epoch % self.config.test_every_epoch == 0:
@@ -234,15 +236,18 @@ class tf_seqLSTM(object):
                 print "best_test_score:", self.config.best_test_score
 
 
-    def train_epoch(self, train_data, dev_data, sess):
+    def train_epoch(self, train_data, sess):
         shuffle(train_data)
         losses=[]
         for i in range(0,len(train_data),self.batch_size):
             batch_size = min(i+self.batch_size,len(train_data))-i
             batch_data=train_data[i:i+batch_size]
-
-            seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data
+            
+            if self.config.dataset == 'SST':
+                seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data
                                                          ,self.internal,self.config.maxseqlen)
+            elif self.config.dataset == "MR":
+                seqdata,seqlabels, seqlngths, max_len = extract_data(batch_data, self.config.maxseqlen)
 
             mask_idx = self.cal_mask(seqdata,-1)
             
@@ -273,15 +278,18 @@ class tf_seqLSTM(object):
 
         return np.mean(losses)
     
-    def evaluate(self,data,sess,isDev = True):
+    def evaluate(self,data,sess,isDev = False):
         num_correct=0
         total_data=0
         for i in range(0,len(data),self.batch_size):
             batch_size = min(i+self.batch_size,len(data))-i
             batch_data=data[i:i+batch_size]
 
-            seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data
-                                        ,0,self.config.maxseqlen)
+            if self.config.dataset == 'SST':
+                seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data, 0, self.config.maxseqlen)
+            elif self.config.dataset == "MR":
+                seqdata,seqlabels, seqlngths, max_len = extract_data(batch_data, self.config.maxseqlen)
+            
             mask_idx = self.cal_mask(seqdata, -1)
 
             feed={self.input:seqdata,
@@ -315,7 +323,11 @@ class tf_seqLSTM(object):
         idx = np.random.randint(0,len(data))
         one_data = data[idx:idx+1]
 
-        seqdata, seqlabels, seqlngths, max_len = extract_seq_data(one_data, 0, self.config.maxseqlen)
+        if self.config.dataset == 'SST':
+            seqdata,seqlabels,seqlngths,max_len=extract_seq_data(one_data, 0, self.config.maxseqlen)
+        elif self.config.dataset == "MR":
+            seqdata,seqlabels, seqlngths, max_len = extract_data(one_data, self.config.maxseqlen)
+        
         mask_idx = self.cal_mask(seqdata, -1)
 
         feed = {self.input: seqdata,
