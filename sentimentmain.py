@@ -27,7 +27,7 @@ ckpt_dir = './ckpt/'
 class Config(object):
     num_emb=None
 
-    emb_dim = 300
+    emb_dim = 100
     hidden_dim = 150 
     output_dim=None
     degree = 2
@@ -171,7 +171,7 @@ def train(dataset = 'SST', restore=False):
                         tmp = 'glove.twitter.27B.' + str(config.emb_dim)+ 'd.txt'
                         glove = os.path.join(GLOVE_DIR,tmp)
                     
-                    glove_embeddings = utils.load_glove(GLOVE_DIR, vocab)
+                    glove_embeddings = utils.load_glove(glove, vocab, config.emb_dim)
                     sess.run(model.embedding_init, feed_dict = {model.initial_emb: glove_embeddings})
 
                     

@@ -275,9 +275,9 @@ def get_max_node_size(datadic):
     return maxsize
 
 
-def load_glove(glove_file, vocab):
+def load_glove(glove_file, vocab, dim):
     f = open(glove_file, 'r')
-    emb_dim = 300
+    emb_dim = dim
     vectors = np.random.uniform(-0.05, 0.05, size = (vocab.size(), emb_dim))
     for line in f:
         splitline = line.split()
