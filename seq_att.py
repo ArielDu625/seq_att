@@ -124,9 +124,8 @@ class tf_seqLSTM(object):
             return tf.unstack(tf.transpose(tensor, perm=[1, 0, 2]))
 
 
-        with tf.variable_scope("Composition",initializer=
-                               tf.contrib.layers.xavier_initializer(),regularizer=
-                               tf.contrib.layers.l2_regularizer(self.reg)):
+        with tf.variable_scope("Composition",initializer=tf.contrib.layers.xavier_initializer(),
+                regularizer=tf.contrib.layers.l2_regularizer(self.reg)):
             cell = rnn.BasicLSTMCell(self.hidden_dim)
             cell = rnn.DropoutWrapper(cell,output_keep_prob=self.dropout,input_keep_prob=self.dropout)
             outputs, state = rnn.static_rnn(cell,unpack_sequence(emb),sequence_length=self.lngths,dtype=tf.float32)
@@ -160,7 +159,7 @@ class tf_seqLSTM(object):
         loss=tf.reduce_sum(l1,[0])
         reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
         regpart=tf.add_n(reg_losses)
-        total_loss=loss+0.5*regpart
+        total_loss=loss + self.config.lmda *regpart
         return loss,total_loss
 
     def accuracy(self):
@@ -368,7 +367,7 @@ class tf_seqLSTMAtt(tf_seqLSTM):
     
     def attention(self, emb,final_hidden,mt):
          
-        with tf.variable_scope("Attention"):
+        with tf.variable_scope("Attention", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
             Wa = tf.get_variable("Wa", [self.emb_dim + self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
             ba = tf.get_variable("ba", [self.attention_dim],
@@ -379,7 +378,7 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         
             with tf.name_scope("Attention"):
                 tf.summary.histogram("Wa", Wa)
-                tf.summary.histogram("ba", ba)
+                #tf.summary.histogram("ba", ba)
                 tf.summary.histogram("Ua", Ua)
 
         _hs = tf.stack([final_hidden for i in range(mt)])
@@ -401,7 +400,7 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         #general
         #transpose(context) * Ws * target
         if method == "general":
-            with tf.variable_scope("Attention"):
+            with tf.variable_scope("Attention", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
                 Wa = tf.get_variable("Wa", [self.hidden_dim, self.hidden_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05))
 
@@ -419,9 +418,10 @@ class tf_seqLSTMAtt(tf_seqLSTM):
             betas = tf.reduce_sum(dot, axis = 2)
         
         elif method == "location":
-            with tf.variable_scope("Attention"):
+            with tf.variable_scope("Attention", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
                 Wa = tf.get_variable("Wa", [self.max_time, self.hidden_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05))
+                
                 with tf.name_scope("Attention"):
                     tf.summary.histogram("Wa", Wa)
             betas = tf.matmul(Wa, target, transpose_b = True)
@@ -429,12 +429,13 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         #default concat
         #transpose(Vs) * tanh(Ws[c:h])
         else:
-            with tf.variable_scope("Attention"):
+            with tf.variable_scope("Attention",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
                 Wa = tf.get_variable("Wa", [2 * self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
                 Ua = tf.get_variable("Ua", [self.attention_dim],
-                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
-        
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05),
+                    regularizer = tf.contrib.layers.l2_regularizer(0.0))
+
                 with tf.name_scope("Attention"):
                     tf.summary.histogram("Wa", Wa)
                     tf.summary.histogram("Ua", Ua)
@@ -514,7 +515,7 @@ class tf_seqLSTMAtt(tf_seqLSTM):
             
             with tf.name_scope("Concatenation"):
                 tf.summary.histogram("Wc", Wc)
-                tf.summary.histogram("bc", bc)
+                #tf.summary.histogram("bc", bc)
 
         with tf.variable_scope("Projection",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
             Wp = tf.get_variable("Wp",[self.output_dim ,self.config.concat_dim],
@@ -526,7 +527,7 @@ class tf_seqLSTMAtt(tf_seqLSTM):
             
             with tf.name_scope("Projection"):
                 tf.summary.histogram("Wp",Wp)
-                tf.summary.histogram("bp",bp)
+                #tf.summary.histogram("bp",bp)
 
             return logits
 
@@ -580,7 +581,7 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
 
     def attention(self, emb,final_hidden,mt):
          
-        with tf.variable_scope("Attention"):
+        with tf.variable_scope("Attention", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
             Wa = tf.get_variable("Wa", [self.emb_dim + self.hidden_dim*2, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
             ba = tf.get_variable("ba", [self.attention_dim],
@@ -591,7 +592,7 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
         
             with tf.name_scope("Attention"):
                 tf.summary.histogram("Wa", Wa)
-                tf.summary.histogram("ba", ba)
+                #tf.summary.histogram("ba", ba)
                 tf.summary.histogram("Ua", Ua)
 
         _hs = tf.stack([final_hidden for i in range(mt)])
@@ -612,15 +613,16 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
     
     def self_attention(self, hiddens, target, mt):
 
-        with tf.variable_scope("Attention"):
+        with tf.variable_scope("Attention",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
             Wa = tf.get_variable("Wa", [4 * self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
             Ua = tf.get_variable("Ua", [self.attention_dim],
-                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05),
+                    regularizer = tf.contrib.layers.l2_regularizer(0.0))
         
             with tf.name_scope("Attention"):
                 tf.summary.histogram("Wa", Wa)
-                tf.summary.histogram("Ua", Ua)
+                #tf.summary.histogram("Ua", Ua)
 
         _hs = tf.stack([target for i in range(mt)])
         hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
@@ -682,7 +684,7 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
             
             with tf.name_scope("Concatenation"):
                 tf.summary.histogram("Wc", Wc)
-                tf.summary.histogram("bc", bc)
+                #tf.summary.histogram("bc", bc)
 
         with tf.variable_scope("Projection",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
             Wp = tf.get_variable("Wp",[self.output_dim ,self.config.concat_dim],
@@ -694,7 +696,7 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
             
             with tf.name_scope("Projection"):
                 tf.summary.histogram("Wp",Wp)
-                tf.summary.histogram("bp",bp)
+                #tf.summary.histogram("bp",bp)
 
             return logits
 

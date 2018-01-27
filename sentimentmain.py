@@ -20,7 +20,7 @@ import seq_att
 
 MR_DIR = './mr/'
 SST_DIR = './sst/'
-GLOVE_DIR ='./glove/glove.840B.300d.txt'
+GLOVE_DIR ='./glove'
 summaries_dir = './summaries/'
 ckpt_dir = './ckpt/'
 
@@ -36,12 +36,13 @@ class Config(object):
     
     dropout = 0.5
     reg=0.0001
+    lmda = 0.5 
 
     #learning rate
-    lr = 0.01
-    begin_decay_epoch = 3 
+    lr = 0.001
+    begin_decay_epoch = 5 
     lrdecay_every_epoch = 1 
-    emb_lr = 0.05
+    emb_lr = 0.005
     
     batch_size = 25
 
@@ -54,11 +55,11 @@ class Config(object):
     trainable_embeddings= True
     
     #Add attention layer
-    use_attention = True 
+    use_attention = False 
     attention_dim = 54 
     concat_dim = 300 
     #method: dot, general, location, or default concat
-    method = "concat" 
+    method = "location" 
     
     global_step = 0
     dev_every_step = 10
@@ -130,11 +131,11 @@ def train(dataset = 'SST', restore=False):
 
     with tf.Graph().as_default():
         
-        #model = seq_att.tf_seqLSTM(config)
+        model = seq_att.tf_seqLSTM(config)
         #model = seq_att.tf_seqLSTMAtt(config) 
 
         #model = seq_att.tf_seqbiLSTM(config)
-        model = seq_att.tf_seqbiLSTMAtt(config)
+        #model = seq_att.tf_seqbiLSTMAtt(config)
         
 
         model_name = model.__class__.__name__
@@ -164,6 +165,12 @@ def train(dataset = 'SST', restore=False):
             else:
                 
                 if config.use_initial_embeddings:
+                    if config.emb_dim == 300:
+                        glove = os.path.join(GLOVE_DIR, 'glove.840B.300d.txt')
+                    else:
+                        tmp = 'glove.twitter.27B.' + str(config.emb_dim)+ 'd.txt'
+                        glove = os.path.join(GLOVE_DIR,tmp)
+                    
                     glove_embeddings = utils.load_glove(GLOVE_DIR, vocab)
                     sess.run(model.embedding_init, feed_dict = {model.initial_emb: glove_embeddings})
 
