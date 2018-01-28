@@ -209,19 +209,22 @@ class tf_seqLSTM(object):
 
     def train(self,train_data,test_data, sess,saver):
         
+        previous_acc = 0
         for epoch in range(self.config.num_epochs):
             print "epoch", epoch
 
-            if epoch >= self.config.begin_decay_epoch and epoch % self.config.lrdecay_every_epoch == 0:
-                self.config.lr = self.config.lr * 0.5 
-            print "learning rate:", self.config.lr
             
             avg_loss = self.train_epoch(train_data, sess)
             print "average loss:", avg_loss
-
+            
             if epoch % self.config.test_every_epoch == 0:
                 test_acc = self.evaluate(test_data, sess, isDev = False)
                 print "test accuracy:", test_acc
+                
+                if epoch >= self.config.begin_decay_epoch and test_acc == previous_acc:
+                    self.config.lr = self.config.lr * 0.5 
+                print "learning rate:", self.config.lr
+                previous_acc = test_acc
 
                 if test_acc > self.config.best_test_score:
                     self.config.best_test_score = test_acc
