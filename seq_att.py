@@ -8,7 +8,6 @@ import sys
 from random import shuffle
 from tensorflow.contrib import rnn
 from data_utils import extract_seq_data
-from process_mr import extract_data
 
 ckpt_dir = './ckpt/'
 summaries_dir = './summaries/'
@@ -21,8 +20,7 @@ class tf_seqLSTM(object):
 
         self.max_time = tf.placeholder(tf.int32,name="max_time")
         
-        if self.config.use_initial_embeddings:
-            self.initial_emb = tf.placeholder(tf.float32, shape=[self.num_emb, self.emb_dim], name = "initial_emb")
+        self.initial_emb = tf.placeholder(tf.float32, shape=[self.num_emb, self.emb_dim], name = "initial_emb")
 
         self.input = tf.placeholder(tf.int32,shape=[None, self.config.maxseqlen],name="input")
         self.mask_idx = tf.placeholder(tf.float32, shape = [None, self.config.maxseqlen], name="mask_idx")
@@ -49,11 +47,9 @@ class tf_seqLSTM(object):
         
         self.add_placeholders()
         
-        if self.config.use_initial_embeddings:
-            with tf.variable_scope("Embed"):
-                W = tf.get_variable("embedding", [self.num_emb, self.emb_dim],
-                        trainable = self.config.trainable_embeddings)
-                self.embedding_init = W.assign(self.initial_emb)
+        with tf.variable_scope("Embed"):
+            W = tf.get_variable("embedding", [self.num_emb, self.emb_dim])
+            self.embedding_init = W.assign(self.initial_emb)
         
         emb_input = self.add_embedding()
         output_states = self.compute_states(emb_input)
@@ -70,10 +66,7 @@ class tf_seqLSTM(object):
             tf.summary.scalar("learning_rate", self.lr)
             tf.summary.scalar("accuracy", self.accuracy)
 
-        if self.config.trainable_embeddings:
-            self.train_op1,self.train_op2 = self.add_training_op()
-        else:
-            self.train_op1 = self.add_training_op()
+        self.train_op1,self.train_op2 = self.add_training_op()
         
         self.merged = tf.summary.merge_all()
         
@@ -84,29 +77,18 @@ class tf_seqLSTM(object):
         else:
             classify_type = "binary"
         
-        if self.config.use_initial_embeddings:
-            if self.config.trainable_embeddings:
-                pretrain_type = "tuned"
-            else:
-                pretrain_type = "fixed"
-        else:
-            pretrain_type = "random"
-        
-        dataset = config.dataset
-        self.summary_base = os.path.join(summaries_dir,model_name ,dataset, classify_type ,pretrain_type) 
-        self.ckpt_base = os.path.join(ckpt_dir, model_name,dataset, classify_type, pretrain_type)
+        self.summary_base = os.path.join(summaries_dir,model_name,classify_type) 
+        self.ckpt_base = os.path.join(ckpt_dir, model_name,classify_type)
 
-        #self.summary_writer = tf.summary.FileWriter(summary_base)
         self.train_writer = tf.summary.FileWriter(self.summary_base + '/train')
         self.dev_writer = tf.summary.FileWriter(self.summary_base + '/dev')
     
     def add_embedding(self):
 
-        with tf.variable_scope("Embed",reuse = self.config.use_initial_embeddings):
+        with tf.variable_scope("Embed",reuse = True):
                 
             embedding = tf.get_variable("embedding", [self.num_emb, self.emb_dim],
                         initializer = tf.random_uniform_initializer(-0.05, 0.05), 
-                        trainable = self.config.trainable_embeddings,
                         regularizer = tf.contrib.layers.l2_regularizer(0.0))
                 
 
@@ -175,8 +157,7 @@ class tf_seqLSTM(object):
     def add_training_op(self):
         loss=self.total_loss
         opt1=tf.train.AdagradOptimizer(self.lr)
-        if self.config.trainable_embeddings:
-            opt2=tf.train.AdagradOptimizer(self.config.emb_lr)
+        opt2=tf.train.AdagradOptimizer(self.config.emb_lr)
 
         ts=tf.trainable_variables()
         gs=tf.gradients(loss,ts)
@@ -191,11 +172,8 @@ class tf_seqLSTM(object):
 
         train_op1=opt1.apply_gradients(gt_nn)
         
-        if self.config.trainable_embeddings:
-            train_op2=opt2.apply_gradients(gt_emb)
-            train_op=[train_op1,train_op2]
-        else:
-            train_op = train_op1
+        train_op2=opt2.apply_gradients(gt_emb)
+        train_op=[train_op1,train_op2]
 
         return train_op
 
@@ -213,7 +191,6 @@ class tf_seqLSTM(object):
         for epoch in range(self.config.num_epochs):
             print "epoch", epoch
 
-            
             avg_loss = self.train_epoch(train_data, sess)
             print "average loss:", avg_loss
             
@@ -221,7 +198,7 @@ class tf_seqLSTM(object):
                 test_acc = self.evaluate(test_data, sess, isDev = False)
                 print "test accuracy:", test_acc
                 
-                if epoch >= self.config.begin_decay_epoch and test_acc == previous_acc:
+                if epoch >= self.config.begin_decay_epoch and test_acc <= previous_acc:
                     self.config.lr = self.config.lr * 0.5 
                 print "learning rate:", self.config.lr
                 previous_acc = test_acc
@@ -245,11 +222,8 @@ class tf_seqLSTM(object):
             batch_size = min(i+self.batch_size,len(train_data))-i
             batch_data=train_data[i:i+batch_size]
             
-            if self.config.dataset == 'SST':
-                seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data
+            seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data
                                                          ,self.internal,self.config.maxseqlen)
-            elif self.config.dataset == "MR":
-                seqdata,seqlabels, seqlngths, max_len = extract_data(batch_data, self.config.maxseqlen)
 
             mask_idx = self.cal_mask(seqdata,-1)
             
@@ -262,10 +236,7 @@ class tf_seqLSTM(object):
                     self.batch_len:len(seqdata),
                     self.max_time:max_len}
             
-            if self.config.trainable_embeddings:
-                summary, loss,_,_=sess.run([self.merged, self.loss,self.train_op1,self.train_op2],feed_dict=feed)
-            else:
-                summary, loss,_=sess.run([self.merged, self.loss,self.train_op1],feed_dict=feed)
+            summary, loss,_,_=sess.run([self.merged, self.loss,self.train_op1,self.train_op2],feed_dict=feed)
             self.train_writer.add_summary(summary,self.config.global_step)
             self.config.global_step += 1
 
@@ -274,9 +245,6 @@ class tf_seqLSTM(object):
             sstr='avg loss %.2f at example %d of %d\r' % (avg_loss, i, len(train_data))
             sys.stdout.write(sstr)
             sys.stdout.flush()
-            
-            #if self.config.global_step % self.config.dev_every_step == 0:
-            #    dev_acc = self.evaluate(dev_data, sess)
 
         return np.mean(losses)
     
@@ -287,10 +255,7 @@ class tf_seqLSTM(object):
             batch_size = min(i+self.batch_size,len(data))-i
             batch_data=data[i:i+batch_size]
 
-            if self.config.dataset == 'SST':
-                seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data, 0, self.config.maxseqlen)
-            elif self.config.dataset == "MR":
-                seqdata,seqlabels, seqlngths, max_len = extract_data(batch_data, self.config.maxseqlen)
+            seqdata,seqlabels,seqlngths,max_len=extract_seq_data(batch_data, 0, self.config.maxseqlen)
             
             mask_idx = self.cal_mask(seqdata, -1)
 
@@ -325,10 +290,7 @@ class tf_seqLSTM(object):
         idx = np.random.randint(0,len(data))
         one_data = data[idx:idx+1]
 
-        if self.config.dataset == 'SST':
-            seqdata,seqlabels,seqlngths,max_len=extract_seq_data(one_data, 0, self.config.maxseqlen)
-        elif self.config.dataset == "MR":
-            seqdata,seqlabels, seqlngths, max_len = extract_data(one_data, self.config.maxseqlen)
+        seqdata,seqlabels,seqlngths,max_len=extract_seq_data(one_data, 0, self.config.maxseqlen)
         
         mask_idx = self.cal_mask(seqdata, -1)
 
@@ -398,17 +360,16 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         _alphas = tf.div(self.masked_betas ,tf.reduce_sum(self.masked_betas, 0))
         alphas = tf.expand_dims(_alphas, -1)
         return alphas
-    
+
     def score(self, context, target, mt, method = "concat"):
         #general
         #transpose(context) * Ws * target
         if method == "general":
-            with tf.variable_scope("Attention", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
+            with tf.variable_scope("Attention_g", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
                 Wa = tf.get_variable("Wa", [self.hidden_dim, self.hidden_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05))
 
-                with tf.name_scope("Attention"):
-                    tf.summary.histogram("Wa", Wa)
+                tf.summary.histogram("Wa", Wa)
 
                 t_wa = tf.matmul(target, Wa)
                 t_wa_c = tf.multiply(context, t_wa)
@@ -420,37 +381,47 @@ class tf_seqLSTMAtt(tf_seqLSTM):
             dot = tf.multiply(context, target)
             betas = tf.reduce_sum(dot, axis = 2)
         
+        #location
+        #only use hiddens to self attention
         elif method == "location":
-            with tf.variable_scope("Attention", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
-                Wa = tf.get_variable("Wa", [self.max_time, self.hidden_dim],
+            with tf.variable_scope("Attention_l", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
+                Wa = tf.get_variable("Wa", [self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05))
-                
-                with tf.name_scope("Attention"):
-                    tf.summary.histogram("Wa", Wa)
-            betas = tf.matmul(Wa, target, transpose_b = True)
+                 
+                ba = tf.get_variable("ba",[self.attention_dim],
+                    initializer=tf.constant_initializer(0.0),
+                    regularizer=tf.contrib.layers.l2_regularizer(0.0))
+                Ua = tf.get_variable("Ua",[self.attention_dim],
+                    initializer=tf.random_uniform_initializer(-0.05,0.05))
+
+                tf.summary.histogram("Wa",Wa)
+                tf.summary.histogram("Ua",Ua)
+
+                v_att = tf.tanh(tf.matmul(tf.reshape(context,[-1, self.hidden_dim]), Wa) + tf.reshape(ba, [1,-1]))
+                _betas = tf.matmul(v_att, tf.reshape(Ua, [-1,1]))
+                betas = tf.reshape(_betas, [mt,-1])
 
         #default concat
         #transpose(Vs) * tanh(Ws[c:h])
         else:
-            with tf.variable_scope("Attention",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
+            with tf.variable_scope("Attention_c",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
                 Wa = tf.get_variable("Wa", [2 * self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
                 Ua = tf.get_variable("Ua", [self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05),
                     regularizer = tf.contrib.layers.l2_regularizer(0.0))
 
-                with tf.name_scope("Attention"):
-                    tf.summary.histogram("Wa", Wa)
-                    tf.summary.histogram("Ua", Ua)
+                tf.summary.histogram("Wa", Wa)
+                tf.summary.histogram("Ua", Ua)
 
-            _hs = tf.stack([target for i in range(mt)])
-            hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
-            _x_h = tf.concat([context, hs], axis = 2)
-            x_h = tf.reshape(_x_h, [-1, 2*self.hidden_dim])
+                _hs = tf.stack([target for i in range(mt)])
+                hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
+                _x_h = tf.concat([context, hs], axis = 2)
+                x_h = tf.reshape(_x_h, [-1, 2*self.hidden_dim])
 
-            _v_att = tf.tanh(tf.matmul(x_h, Wa))
-            _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
-            betas = tf.reshape(_betas, [mt, -1])
+                _v_att = tf.tanh(tf.matmul(x_h, Wa))
+                _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
+                betas = tf.reshape(_betas, [mt, -1])
         
     
         exp_betas = tf.exp(betas)
@@ -459,8 +430,6 @@ class tf_seqLSTMAtt(tf_seqLSTM):
         alphas = tf.expand_dims(_alphas, -1)
         
         return alphas
-
-    
 
     def self_attention(self, context, target, mt, method):
         return self.score(context, target, mt, method)
@@ -535,9 +504,6 @@ class tf_seqLSTMAtt(tf_seqLSTM):
             return logits
 
 
-
-
-
 class tf_seqbiLSTM(tf_seqLSTM):
 
     def compute_states(self,emb):
@@ -576,9 +542,6 @@ class tf_seqbiLSTM(tf_seqLSTM):
 
             return logits
 
-
-
-
 class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
 
 
@@ -614,35 +577,76 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
         
         return alphas
     
-    def self_attention(self, hiddens, target, mt):
+    def score(self, context, target, mt, method = "concat"):
+        #general
+        #transpose(context) * Ws * target
+        if method == "general":
+            with tf.variable_scope("Attention_g", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
+                Wa = tf.get_variable("Wa", [2*self.hidden_dim, 2*self.hidden_dim],
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
 
-        with tf.variable_scope("Attention",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
-            Wa = tf.get_variable("Wa", [4 * self.hidden_dim, self.attention_dim],
+                tf.summary.histogram("Wa", Wa)
+
+                t_wa = tf.matmul(target, Wa)
+                t_wa_c = tf.multiply(context, t_wa)
+                betas = tf.reduce_sum(t_wa_c, axis = 2)
+
+        #dot
+        #transpose(context) * target
+        elif method == "dot":
+            dot = tf.multiply(context, target)
+            betas = tf.reduce_sum(dot, axis = 2)
+        
+        #location
+        #only use hiddens to self attention
+        elif method == "location":
+            with tf.variable_scope("Attention_l", regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
+                Wa = tf.get_variable("Wa", [2*self.hidden_dim, self.attention_dim],
+                    initializer = tf.random_uniform_initializer(-0.05, 0.05))
+                 
+                ba = tf.get_variable("ba",[self.attention_dim],
+                    initializer=tf.constant_initializer(0.0),
+                    regularizer=tf.contrib.layers.l2_regularizer(0.0))
+                Ua = tf.get_variable("Ua",[self.attention_dim],
+                    initializer=tf.random_uniform_initializer(-0.05,0.05))
+
+                tf.summary.histogram("Wa",Wa)
+                tf.summary.histogram("Ua",Ua)
+
+                v_att = tf.tanh(tf.matmul(tf.reshape(context,[-1, 2*self.hidden_dim]),Wa) + tf.reshape(ba, [1,-1]))
+                _betas = tf.matmul(v_att, tf.reshape(Ua, [-1,1]))
+                betas = tf.reshape(_betas, [mt,-1])
+
+        #default concat
+        #transpose(Vs) * tanh(Ws[c:h])
+        else:
+            with tf.variable_scope("Attention_c",regularizer = tf.contrib.layers.l2_regularizer(self.reg)):
+                Wa = tf.get_variable("Wa", [4 * self.hidden_dim, self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05)) 
-            Ua = tf.get_variable("Ua", [self.attention_dim],
+                Ua = tf.get_variable("Ua", [self.attention_dim],
                     initializer = tf.random_uniform_initializer(-0.05, 0.05),
                     regularizer = tf.contrib.layers.l2_regularizer(0.0))
-        
-            with tf.name_scope("Attention"):
+
                 tf.summary.histogram("Wa", Wa)
-                #tf.summary.histogram("Ua", Ua)
+                tf.summary.histogram("Ua", Ua)
 
-        _hs = tf.stack([target for i in range(mt)])
-        hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
-        _x_h = tf.concat([hiddens, hs], axis = 2)
-        x_h = tf.reshape(_x_h, [-1, 4*self.hidden_dim])
+                _hs = tf.stack([target for i in range(mt)])
+                hs = tf.multiply(_hs, tf.to_float(tf.expand_dims(tf.transpose(self.mask_idx), -1)))
+                _x_h = tf.concat([context, hs], axis = 2)
+                x_h = tf.reshape(_x_h, [-1, 4*self.hidden_dim])
 
-        _v_att = tf.tanh(tf.matmul(x_h, Wa))
-        _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
-        betas = tf.reshape(_betas, [mt, -1])
+                _v_att = tf.tanh(tf.matmul(x_h, Wa))
+                _betas = tf.matmul(_v_att, tf.reshape(Ua, [-1,1]))
+                betas = tf.reshape(_betas, [mt, -1])
         
+    
         exp_betas = tf.exp(betas)
         self.masked_betas = tf.multiply(exp_betas, tf.transpose(self.mask_idx))
         _alphas = tf.div(self.masked_betas ,tf.reduce_sum(self.masked_betas, 0))
         alphas = tf.expand_dims(_alphas, -1)
         
         return alphas
-    
+     
     def compute_states(self, emb):
 
         with tf.variable_scope("Composition", 
@@ -665,7 +669,8 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
         average_hidden = tf.div(sum_out,tf.expand_dims(tf.to_float(self.lngths),1))
         
         mt = len(outputs)
-        alphas = self.self_attention(outputs,average_hidden, mt)
+        method = self.config.method
+        alphas = self.self_attention(outputs, average_hidden, mt,method)
 
         context = tf.reduce_sum(outputs * alphas, 0)
         final_outputs = tf.concat([context, average_hidden], axis = 1)
@@ -702,6 +707,4 @@ class tf_seqbiLSTMAtt(tf_seqLSTMAtt):
                 #tf.summary.histogram("bp",bp)
 
             return logits
-
-
 

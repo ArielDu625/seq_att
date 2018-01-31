@@ -11,6 +11,8 @@ def load_mr(data_dir):
     
     data = {}
     max_sentence_length = 0
+    count = 0
+    sumlen = 0
 
     for split, path in split_paths.iteritems():
         sentencepath = os.path.join(path, "index.txt")
@@ -27,12 +29,14 @@ def load_mr(data_dir):
                 splitdata.append(pair)
                 if len(sentence) > max_sentence_length:
                     max_sentence_length = len(sentence)
-
+                sumlen += len(sentence)
+                count += 1
         data[split] = splitdata
     
-    return data, voc, max_sentence_length
+    average_len = int(sumlen / count)
+    return data, voc, max_sentence_length, average_len
 
-def extract_data(data, fillnum = 100):
+def extract_data(data, fillnum = 56):
     seqdata = []
     seqlabels = []
     for pair in data:
@@ -45,12 +49,15 @@ def extract_data(data, fillnum = 100):
     seqlngths = [len(s) for s in seqdata]
 
     maxl = max(seqlngths)
-    assert fillnum >= maxl
+    #assert fillnum >= maxl
 
     seqarr = np.empty([len(seqdata), fillnum], dtype = "int32")
     seqarr.fill(-1)
     for i,s in enumerate(seqdata):
-        seqarr[i, 0:len(s)] = np.array(s, dtype="int32")
+        if len(s) > fillnum:
+            seqarr[i, 0:fillnum] = np.array(s[:fillnum], dtype="int32")
+        else:
+            seqarr[i, 0:len(s)] = np.array(s, dtype="int32")
 
     seqdata = seqarr
 
@@ -59,15 +66,17 @@ def extract_data(data, fillnum = 100):
 
 def test_fn():
     data_dir = './mr'
-    data, voc, max_sentence_length = load_mr(data_dir)
+    length = 56
+    data, voc, max_sentence_length,average_len = load_mr(data_dir)
     print "vocab size:", voc.size()
     print "max sentence length:", max_sentence_length
+    print "average length:", average_len
 
     for k,d in data.iteritems():
         print(k, len(d))
     
     d = data['test']
-    a,b,c,_ = extract_data(d[0:1], max_sentence_length)
+    a,b,c,_ = extract_data(d[0:1])
     print a,b,c
 
     for sentence in a:
